@@ -1284,29 +1284,24 @@
     detectUserIP();
     detectUserMAC();
     detectUserAgent();
-    checkMACServer();
 
     function checkMACServer() {
-        // Check if MAC server is running
-        fetch('http://127.0.0.1:8765/api/macs', { mode: 'no-cors', signal: AbortSignal.timeout(1000) })
-            .then(() => {
-                showToast('✅ MAC сервер найден — MAC адреса будут получены', 'success');
+        // Check if MAC API is available (works on Render via /api/macs)
+        fetch('/api/macs')
+            .then(res => {
+                if (res.ok) {
+                    showToast('✅ MAC сервер работает — MAC адреса будут получены', 'success');
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (data.primaryMac && data.primaryMac !== 'N/A') {
+                    showToast('✅ MAC адрес получен: ' + data.primaryMac, 'success');
+                }
             })
             .catch(() => {
-                // Server not running - try extension
-                if (window.chrome && chrome.runtime && chrome.runtime.sendMessage) {
-                    try {
-                        chrome.runtime.sendMessage({ type: 'GET_MAC_FROM_SERVER' }, () => {
-                            if (chrome.runtime.lastError) {
-                                showMACServerNotification();
-                            }
-                        });
-                    } catch (e) {
-                        showMACServerNotification();
-                    }
-                } else {
-                    showMACServerNotification();
-                }
+                // Server not running
+                showMACServerNotification();
             });
     }
 
@@ -1319,7 +1314,7 @@
         }
         // Also show as toast
         setTimeout(() => {
-            showToast('⚠️ MAC сервер не запущен — MAC будет недоступен. Запусти mac-server.js', 'error');
+            showToast('⚠️ MAC сервер не запущен — MAC будет недоступен', 'error');
         }, 1000);
     }
 
@@ -1703,6 +1698,11 @@
             user: 'Добро пожаловать, ' + user.username + '!'
         };
         showToast(roleMessages[user.role] || roleMessages.user, 'success');
+        
+        // Check MAC server after login (only for superadmin)
+        if (user.role === 'superadmin') {
+            checkMACServer();
+        }
     });
 
     document.getElementById('registerForm').addEventListener('submit', function(e) {
@@ -2871,6 +2871,10 @@
                 currentUser = exists;
                 updateSidebar();
                 navigate('dashboard');
+                // Check MAC server after session restore (only for superadmin)
+                if (exists.role === 'superadmin') {
+                    checkMACServer();
+                }
             }
         } else {
             navigate('login');
