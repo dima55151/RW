@@ -8,6 +8,23 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const MAC_PORT = 8765;
 
+// Proxy for MAC API (frontend calls same domain, server proxies to MAC_PORT)
+app.get('/api/macs', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    const proxyReq = http.get(`http://127.0.0.1:${MAC_PORT}/api/macs`, (proxyRes) => {
+        let data = '';
+        proxyRes.on('data', chunk => data += chunk);
+        proxyRes.on('end', () => {
+            res.setHeader('Content-Type', 'application/json');
+            res.end(data);
+        });
+    });
+    proxyReq.on('error', (err) => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'MAC server not available' }));
+    });
+});
+
 // Serve static files
 app.use(express.static(path.join(__dirname)));
 
@@ -78,7 +95,6 @@ function getNetworkInfo(res) {
             res.end(JSON.stringify(macs));
         });
     } else {
-        // Fallback to OS module
         const interfaces = os.networkInterfaces();
         const macs = [];
         for (const [name, ifaces] of Object.entries(interfaces)) {
@@ -103,76 +119,39 @@ function parseWindowsOutput(output) {
     const macRegex = /([0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2}[:-][0-9A-Fa-f]{2})/g;
     const allMacMatches = output.match(macRegex) || [];
     const uniqueMacs = [...new Set(allMacMatches)].map(m => m.replace(/-/g, ':'));
-    
     const ipRegex = /(\d+\.\d+\.\d+\.\d+)/g;
     const allIPMatches = output.match(ipRegex) || [];
     const uniqueIPs = [...new Set(allIPMatches)];
-    
-    const primaryMac = uniqueMacs.find(m => 
-        m !== '00:00:00:00:00:00' && m !== 'FF:FF:FF:FF:FF:FF'
-    ) || uniqueMacs[0] || 'N/A';
-
-    return {
-        platform: 'windows',
-        primaryMac,
-        allMacs: uniqueMacs,
-        allIPs: uniqueIPs
-    };
+    const primaryMac = uniqueMacs.find(m => m !== '00:00:00:00:00:00' && m !== 'FF:FF:FF:FF:FF:FF') || uniqueMacs[0] || 'N/A';
+    return { platform: 'windows', primaryMac, allMacs: uniqueMacs, allIPs: uniqueIPs };
 }
 
 function parseLinuxOutput(output) {
     const macRegex = /([0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5})/g;
     const macs = output.match(macRegex) || [];
     const uniqueMacs = [...new Set(macs)];
-
     const ipRegex = /inet (\d+\.\d+\.\d+\.\d+)/g;
     const ips = [];
     let match;
-    while ((match = ipRegex.exec(output)) !== null) {
-        ips.push(match[1]);
-    }
-
-    return {
-        platform: 'linux',
-        primaryMac: uniqueMacs.find(m => m !== '00:00:00:00:00:00') || uniqueMacs[0] || 'N/A',
-        allMacs: uniqueMacs,
-        allIPs: ips
-    };
+    while ((match = ipRegex.exec(output)) !== null) ips.push(match[1]);
+    return { platform: 'linux', primaryMac: uniqueMacs.find(m => m !== '00:00:00:00:00:00') || uniqueMacs[0] || 'N/A', allMacs: uniqueMacs, allIPs: ips };
 }
 
 function parseMacOutput(output) {
     const macRegex = /([0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5})/g;
     const macs = output.match(macRegex) || [];
     const uniqueMacs = [...new Set(macs)];
-
     const ipRegex = /inet (\d+\.\d+\.\d+\.\d+)/g;
     const ips = [];
     let match;
-    while ((match = ipRegex.exec(output)) !== null) {
-        ips.push(match[1]);
-    }
-
-    return {
-        platform: 'macos',
-        primaryMac: uniqueMacs.find(m => !m.startsWith('00:00:00:')) || uniqueMacs[0] || 'N/A',
-        allMacs: uniqueMacs,
-        allIPs: ips
-    };
+    while ((match = ipRegex.exec(output)) !== null) ips.push(match[1]);
+    return { platform: 'macos', primaryMac: uniqueMacs.find(m => !m.startsWith('00:00:00:')) || uniqueMacs[0] || 'N/A', allMacs: uniqueMacs, allIPs: ips };
 }
 
-// Start MAC server first
 macServer.listen(MAC_PORT, '0.0.0.0', () => {
-    console.log(`\n===========================================`);
     console.log(`  🌐 MAC Server running on port ${MAC_PORT}`);
-    console.log(`  📡 Endpoint: http://localhost:${MAC_PORT}/api/macs`);
-    console.log(`===========================================\n`);
 });
 
-// Start main server
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n===========================================`);
     console.log(`  🚀 ReallyWorld running on port ${PORT}`);
-    console.log(`  🌐 Open: http://localhost:${PORT}`);
-    console.log(`  📡 MAC API: http://localhost:${MAC_PORT}/api/macs`);
-    console.log(`===========================================\n`);
 });

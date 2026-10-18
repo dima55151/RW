@@ -1467,42 +1467,19 @@
     }
 
     function detectUserMAC() {
-        // Method 1: Try local MAC server
-        fetch('http://127.0.0.1:8765/api/macs', { mode: 'no-cors', signal: AbortSignal.timeout(2000) })
-            .then(() => {
-                return fetch('http://127.0.0.1:8765/api/macs');
-            })
+        // Try server-side MAC endpoint (works on Render)
+        fetch('/api/macs')
             .then(res => res.json())
             .then(data => {
-                if (data.primaryMac) {
+                if (data.primaryMac && data.primaryMac !== 'N/A') {
                     userMAC = data.primaryMac;
                     updateMACDisplay(data);
                     return;
                 }
-                throw new Error('No data');
+                throw new Error('No MAC');
             })
             .catch(() => {
-                // Method 2: Try extension
-                if (window.chrome && chrome.runtime && chrome.runtime.sendMessage) {
-                    try {
-                        chrome.runtime.sendMessage({ type: 'GET_MAC' }, (response) => {
-                            if (chrome.runtime.lastError) {
-                                throw new Error('Extension not found');
-                            }
-                            if (response && response.mac) {
-                                userMAC = response.mac;
-                                updateMACDisplay(response);
-                            } else {
-                                throw new Error('Extension failed');
-                            }
-                        });
-                        return;
-                    } catch (e) {
-                        // Extension failed, continue to Method 3
-                    }
-                }
-
-                // Method 3: WebRTC fallback (shows internal IPs)
+                // Fallback: WebRTC (shows internal IPs)
                 try {
                     const PC = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
                     if (PC) {
@@ -1517,21 +1494,12 @@
                                     const ipMatches = sdp.sdp.match(/c=IN IPv4 ([\d.]+)/g);
                                     if (ipMatches) {
                                         const ips = [...new Set(ipMatches.map(m => m.split(' ')[3]))];
-                                        if (userMAC === 'Не доступен (ограничения браузера)') {
-                                            userMAC = 'WebRTC: ' + ips.join(', ');
-                                        }
+                                        userMAC = 'WebRTC: ' + ips.join(', ');
                                     }
                                 }
                             } catch (e) {}
                             pc.close();
                         }, 1000);
-                    }
-                } catch (e) {}
-
-                // Method 4: OS network interfaces (Chrome 113+ has navigator.connection)
-                try {
-                    if (navigator.connection && navigator.connection.uplink) {
-                        // Just noting connection info
                     }
                 } catch (e) {}
 
